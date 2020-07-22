@@ -1,0 +1,516 @@
+---
+title: "tadpole_Benchmark"
+author: "eider"
+date: "4/3/2020"
+output: html_document
+---
+
+
+
+
+```{r}
+DatosANDI <- read.delim("./TADPOLE_D1_D2.csv",na.strings=c("NA","","#N/A","#DIV/0!"),sep = ",")
+#ordenar por RID
+DatosANDI <- DatosANDI[with(DatosANDI,order(RID,EXAMDATE)),]
+length(unique(DatosANDI$RID))
+
+prueba <- DatosANDI
+prueba <- prueba[with(prueba, order(RID, EXAMDATE)), ]
+
+
+```
+
+
+```{r}
+baseline <- subset(prueba,VISCODE=="bl" & DX=="MCI")
+#control
+cn <- subset(prueba,VISCODE=="bl" & DX_bl=="CN")
+
+conEvento <- subset(prueba,DXCHANGE==5)
+
+
+```
+
+
+```{r}
+#repetidos
+conEvento<-conEvento[!duplicated(conEvento$RID),]
+
+baselineDeEvento <- baseline[which(baseline$RID %in% conEvento$RID),]
+
+
+baseline$status <- 0
+
+# changing status
+baseline[which(baseline$RID %in% conEvento$RID),]$status<-1
+```
+
+
+
+```{r}
+#varnames
+varnames <- read.delim("./varnames.csv",sep=",")
+colnames(varnames)<-c("names","description")
+
+
+baseline<-as.data.frame(baseline);
+baselineSoloMRI <- baseline[,c("RID","status",as.character(varnames$names))]
+
+```
+
+
+
+```{r}
+#normalizo datos
+mriIzquierdas <- varnames[grep("Left",varnames$description),]
+mriIzquierdas$description <- gsub("Left","",mriIzquierdas$description)
+mriDerechas <- varnames[grep("Right",varnames$description),]
+mriDerechas$description <- gsub("Right","",mriDerechas$description)
+
+mergeMRI <- merge(mriIzquierdas, mriDerechas, by="description")
+varnames[which((!varnames$names %in% mergeMRI$names.x) & (!varnames$names %in% mergeMRI$names.y)),]
+```
+
+
+
+```{r}
+sujetos <- baselineSoloMRI
+for(i in 1:nrow(mergeMRI)) {
+  column = mergeMRI[i,]
+  diffLeftRight <- abs(sujetos[,as.character(column$names.x)]-sujetos[,as.character(column$names.y)])
+  sumLeftRight <- sujetos[,as.character(column$names.x)]+sujetos[,as.character(column$names.y)]
+  sujetos[,as.character(column$names.x)] <- diffLeftRight;
+  sujetos[,as.character(column$names.y)] <- sumLeftRight;
+}
+
+sujetosMCItoAD <- sujetos;
+```
+
+
+```{r}
+#diferencias y sumas de cn
+sujetos <- as.data.frame(cn)
+for(i in 1:nrow(mergeMRI)) {
+  column = mergeMRI[i,]
+  diffLeftRight <- abs(sujetos[,as.character(column$names.x)]-sujetos[,as.character(column$names.y)])
+  sumLeftRight <- sujetos[,as.character(column$names.x)]+sujetos[,as.character(column$names.y)]
+  sujetos[,as.character(column$names.x)] <- diffLeftRight;
+  sujetos[,as.character(column$names.y)] <- sumLeftRight;
+}
+sujetosNC <- sujetos;
+
+```
+
+
+```{r}
+#scale
+featuresToScale <- as.character(varnames$names)
+featuresToScale <- featuresToScale[-c(1,2)]
+MCIToADToScale <- sujetosMCItoAD[,featuresToScale]
+NCToScale <- sujetosNC[,featuresToScale]
+```
+
+
+```{r}
+library(FRESA.CAD)
+
+scale <- FRESAScale(data=MCIToADToScale,refFrame = NCToScale,method = "RankInv")
+scaledData <- scale$scaledData
+```
+
+
+```{r}
+normData <- cbind(sujetosMCItoAD[,c("RID","status","PTGENDER","APOE4")],scaledData)
+withOutNorm <- sujetosMCItoAD;
+
+baselineSoloMRISinColumnasNA <- normData[,colSums(is.na(normData))<(0.5*nrow(normData))]
+baselineSoloMRISinColumnasNAWN <- withOutNorm[,colSums(is.na(withOutNorm))<(0.5*nrow(withOutNorm))]
+baselineSoloMRISinColumnasNAWNWAR <- baselineSoloMRI[,colSums(is.na(baselineSoloMRI))<(0.5*nrow(baselineSoloMRI))]
+
+#elimino sujetos que tienen todo NA
+sujetosSinTodoNA<-baselineSoloMRISinColumnasNA[rowSums(is.na(baselineSoloMRISinColumnasNA))<309,]
+sujetosSinTodoNAWN<-baselineSoloMRISinColumnasNAWN[rowSums(is.na(baselineSoloMRISinColumnasNAWN))<309,]
+sujetosSinTodoNAWNAR<-baselineSoloMRISinColumnasNAWNWAR[rowSums(is.na(baselineSoloMRISinColumnasNAWNWAR))<309,]
+
+
+```
+
+
+
+```{r}
+
+#cambio genero para impute
+sujetosSinTodoNA$PTGENDER<- gsub("Male",1,sujetosSinTodoNA$PTGENDER)
+sujetosSinTodoNA$PTGENDER<- gsub("Female",2,sujetosSinTodoNA$PTGENDER)
+sujetosSinTodoNA$PTGENDER<-as.numeric(sujetosSinTodoNA$PTGENDER)
+
+sujetosSinTodoNAWN$PTGENDER<- gsub("Male",1,sujetosSinTodoNAWN$PTGENDER)
+sujetosSinTodoNAWN$PTGENDER<- gsub("Female",2,sujetosSinTodoNAWN$PTGENDER)
+sujetosSinTodoNAWN$PTGENDER<-as.numeric(sujetosSinTodoNAWN$PTGENDER)
+
+sujetosSinTodoNAWNAR$PTGENDER<- gsub("Male",1,sujetosSinTodoNAWNAR$PTGENDER)
+sujetosSinTodoNAWNAR$PTGENDER<- gsub("Female",2,sujetosSinTodoNAWNAR$PTGENDER)
+sujetosSinTodoNAWNAR$PTGENDER<-as.numeric(sujetosSinTodoNAWNAR$PTGENDER)
+```
+
+
+```{r}
+#relleno nas con knn
+# library(FRESA.CAD)
+baselineImputed <-  nearestNeighborImpute(sujetosSinTodoNA)
+baselineImputed <- as.data.frame(baselineImputed)
+RIDS <- baselineImputed[,1]
+rownames(baselineImputed)<-RIDS
+baselineImputed <- baselineImputed[,-c(1)]
+fnames <- colnames(baselineImputed)[-c(1,2)]
+columnsNotCorralated <- correlated_Remove(baselineImputed, fnames=fnames, thr=0.7)
+baselineImputedNoCorrelated<-baselineImputed[,c("status",as.character(columnsNotCorralated))]
+load("baselineImputedNoCorrelated.RDATA")
+#save(baselineImputedNoCorrelated,file="baselineImputedNoCorrelated.RDATA")
+
+```
+
+
+```{r}
+
+# WN
+baselineImputedWN <-  nearestNeighborImpute(sujetosSinTodoNAWN)
+baselineImputedWN <- as.data.frame(baselineImputedWN)
+RIDS <- baselineImputedWN[,1]
+rownames(baselineImputedWN)<-RIDS
+baselineImputedWN <- baselineImputedWN[,-c(1)]
+#save(baselineImputedWN,file="baselineImputedWN.RDATA")
+load("baselineImputedWN.RDATA")
+#WNAR
+baselineImputedWNAR <-  nearestNeighborImpute(sujetosSinTodoNAWNAR)
+baselineImputedWNAR <- as.data.frame(baselineImputedWNAR)
+RIDS <- baselineImputedWNAR[,1]
+rownames(baselineImputedWNAR)<-RIDS
+baselineImputedWNAR <- baselineImputedWNAR[,-c(1)]
+
+fnames <- colnames(baselineImputedWNAR)[-c(1,2)]
+columnsNotCorralated <- correlated_Remove(baselineImputedWNAR, fnames=fnames, thr=0.7)
+baselineImputedWNAR<-baselineImputedWNAR[,c("status",as.character(columnsNotCorralated))]
+
+#save(baselineImputedWNAR,file="baselineImputedWNAR.RDATA")
+load("baselineImputedWNAR.RDATA")
+
+```
+
+
+```{r}
+#adaptar lasso
+
+firstLasoModel <- LASSO_1SE(baselineImputedNoCorrelated ~.,status)
+baselineImputedNoCorrelated$status
+
+
+LASSOcv <- randomCV(baselineImputedNoCorrelated,"status",
+                    LASSO_1SE,trainFraction = 0.8,
+                    repetitions = 75,
+                    family = "binomial")
+
+save(LASSOcv,file="LASSOcv.RDATA")
+
+
+bs <- predictionStats_binary(LASSOcv$medianTest,"LASSOcv")
+
+```
+
+
+
+Load the libraries
+```{r Libraries}
+#library(FRESA.CAD)
+library(fastAdaboost)
+library(caret)
+library(doParallel)
+library(kernlab) #newone for the svmpoly
+library("gbm")
+cl <- makePSOCKcluster(6)
+```
+
+```{r traincontrol}
+
+tunningctrl <- trainControl(
+  method = "repeatedcv", 
+  number = 10,
+  repeats = 5
+)
+noTuningControl <- trainControl(method = "none")
+
+```
+
+
+
+```{r}
+GBM_fit <- function(formula = formula, data=NULL, distribution = "bernoulli", n.trees = 1000,
+                  shrinkage = 0.01, interaction.depth = 4, ...)
+{
+  fit <- gbm(formula = formula,data = data,distribution = distribution,n.trees = n.trees,
+                  shrinkage = shrinkage, interaction.depth = interaction.depth,...);
+  selectedfeatures <- summary(fit,plotit = FALSE);
+  sum <- 0;
+  sfeat = 1;
+  while (sum < 90) {sum <- sum + selectedfeatures[sfeat,2]; sfeat <- sfeat + 1;} #keep the ones that add to 90%
+
+	result <- list(fit = fit,n.trees = n.trees,selectedfeatures = rownames(selectedfeatures[1:sfeat,]))
+	class(result) <- "GBM_FIT";
+	return(result)
+}
+
+```
+
+We also need a proper predict function for the boosting algorithm:
+
+```{r}
+
+predict.GBM_FIT <- function(object,...) 
+{
+		parameters <- list(...);
+		testData <- parameters[[1]];
+		n.trees = seq(from = (0.1*object$n.trees),to = object$n.trees, by = object$n.trees/25) #no of trees-a vector of 25 values 
+		pLS <- predict(object$fit,testData,n.trees = n.trees);
+		pLS <- 1.0/(1.0 + exp(-apply(pLS,1,mean)))
+		return(pLS);
+}
+
+```
+
+
+
+## The BSWiMS Model
+
+```{r}
+Repeats <- 75 # the number of repetitions
+trainFraction <- 0.80
+
+#bm <- BSWiMS.model(status~.,baselineImputedNoCorrelated,NumberofRepeats = 100)
+#bm$bagging$frequencyTable
+#bm$univariate[1:10,]
+
+#                     classSamplingType= "Proportional",
+#
+set.seed(42)
+BSWiMScv <- randomCV(baselineImputedNoCorrelated,
+                     "status",
+                     fittingFunction = BSWiMS.model,
+                     trainFraction = trainFraction,
+                     repetitions = Repeats,
+                     NumberofRepeats = 1)
+#
+save(BSWiMScv,file="BSWiMScv.RDATA")
+load("./BSWiMScv.RDATA")
+
+par(mar=c(4,10,4,4),pty="m")
+barplot(BSWiMScv$featureFrequency[20:1]/Repeats,xlim=c(0,1),las=2,cex.names =0.70,horiz = TRUE,main="Top Selected Features",xlab="Selection Frequency")
+par(op)
+
+BSWiMScv_bs <- predictionStats_binary(BSWiMScv$medianTest,"BSWiMS")
+bs$accc
+bs$berror
+#getwd()
+##aquixxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+eBSWiMScv <- randomCV(fittingFunction = BSWiMS.model,
+                    trainSampleSets=BSWiMScv$trainSamplesSets,
+                     NumberofRepeats = -3)
+save(eBSWiMScv,file="eBSWiMScv.RDATA")
+#load("./eBSWiMScv.RDATA")
+#
+#barplot(eBSWiMScv$featureFrequency[1:20])
+#
+#bs <- predictionStats_binary(eBSWiMScv$medianTest,"eBSWiMS")
+#bs$accc
+#bs$berror
+#naive bayes
+
+
+NAIVEBAYEScv <- randomCV(fittingFunction=NAIVE_BAYES,
+                  trainSampleSets=BSWiMScv$trainSamplesSets,
+                  featureSelectionFunction = BSWiMScv$selectedFeaturesSet,
+                  pca=TRUE,usekernel = TRUE)
+
+
+
+save(NAIVEBAYEScv,file="NAIVEBAYEScv.RDATA")
+load("./NAIVEBAYEScv.RDATA")
+
+
+bs <- predictionStats_binary(NAIVEBAYEScv$medianTest,"Naive Bayes")
+bs$accc
+bs$berror
+
+#lasso
+LASSOMINcv <- randomCV(fittingFunction=LASSO_MIN,
+                   trainSampleSets=BSWiMScv$trainSamplesSets,
+                   family = "binomial")
+save(LASSOMINcv,file="LASSOMINcv.RDATA")
+
+load("./LASSOMINcv.RDATA")
+bs <- predictionStats_binary(LASSOMINcv$medianTest,"LASSO MIN")
+bs$accc
+bs$berror
+
+#lasso 1se
+LASSO1secv <- randomCV(fittingFunction=LASSO_1SE,
+                   trainSampleSets=BSWiMScv$trainSamplesSets,
+                   family = "binomial")
+save(LASSO1secv,file="LASSO1secv.RDATA")
+
+#load("./LASSO1secv.RDATA")
+
+par(mar=c(4,10,4,4),pty="m")
+barplot(LASSO1secv$featureFrequency[1:20],las=2,cex.names =0.70,horiz = TRUE)
+par(op)
+
+bs <- predictionStats_binary(LASSO1secv$medianTest,"LASSO 1SE")
+bs$accc
+bs$berror
+#elastic net 
+ELASTICNETcv <- randomCV(fittingFunction=GLMNET_ELASTICNET_MIN,
+                   trainSampleSets=BSWiMScv$trainSamplesSets,
+                   family = "binomial")
+save(ELASTICNETcv,file="ELASTICNETcv.RDATA")
+
+#load("./ELASTICNETcv.RDATA")
+
+
+bs <- predictionStats_binary(ELASTICNETcv$medianTest,"Enet min")
+bs$accc
+bs$berror
+
+##naive bayes with lasso_1se features
+#NAIVEBAYES_LF_cv <- randomCV(fittingFunction=NAIVE_BAYES,
+#                  trainSampleSets=NAIVEBAYEScv$trainSamplesSets,
+#                  featureSelectionFunction = #LASSO1secv$selectedFeaturesSet,pca=TRUE,usekernel = TRUE)
+#save(NAIVEBAYES_LF_cv,file="NAIVEBAYES_LF_cv.RDATA")
+#load("./NAIVEBAYES_LF_cv.RDATA")
+#
+#bs <- predictionStats_binary(NAIVEBAYES_LF_cv$medianTest,"NAIVEBAYES_LF_cv")
+#bs$accc
+#bs$berror
+#
+KNN_LF_cv <- randomCV(fittingFunction=KNN_method,
+                  trainSampleSets=BSWiMScv$trainSamplesSets,
+                  featureSelectionFunction = LASSO1secv$selectedFeaturesSet)
+save(KNN_LF_cv,file="KNN_LF_cv.RDATA")
+#load("./KNN_LF_cv.RDATA")
+
+bs <- predictionStats_binary(KNN_LF_cv$medianTest,"KNN_LF_cv")
+bs$accc
+bs$berror
+
+SVMcv <- randomCV(fittingFunction=e1071::svm,
+                   trainSampleSets=BSWiMScv$trainSamplesSets,
+                  featureSelectionFunction = LASSO1secv$selectedFeaturesSet,
+                  asFactor=TRUE,
+                  probability = TRUE)
+save(SVMcv,file="SVMcv.RDATA")
+#load("./SVMcv.RDATA")
+
+bs <- predictionStats_binary(SVMcv$medianTest,"SVM")
+bs$accc
+bs$berror
+
+#SVMPOLY
+#run 3 cv to estimate optimal hyperpatameters 
+test_class_cv_form <- train(as.factor(status) ~ .,
+                            data = baselineImputedNoCorrelated, 
+                            method = "svmPoly", 
+                            trControl = trainControl(method = "cv",
+                                                     number = 20, 
+                                                     returnResamp = "all"),
+                            preProc = c("center", "scale"))
+
+noTuningControl <- trainControl(method = "none", classProbs = FALSE,
+                                summaryFunction =twoClassSummary)
+
+svmPolycv <- randomCV(fittingFunction=train,
+                  trainSampleSets=BSWiMScv$trainSamplesSets,
+                  asFactor = TRUE,
+                  method = "svmPoly",
+                  trControl = noTuningControl,
+                  tuneGrid = test_class_cv_form$bestTune,
+                  verbose = FALSE
+                  )
+
+
+#ADABOOST
+ADABOOSTcv <- randomCV(fittingFunction=adaboost,
+                  trainSampleSets=BSWiMScv$trainSamplesSets,
+                  featureSelectionFunction = LASSO1secv$selectedFeaturesSet,
+                  asFactor = TRUE,
+                  nIter=10)
+save(ADABOOSTcv,file="ADABOOSTcv.RDATA")
+#load("./ADABOOSTcv.RDATA")
+
+bs <- predictionStats_binary(ADABOOSTcv$medianTest,"ADABOOST")
+bs$accc
+bs$berror
+
+GBM_fitcv <- randomCV(fittingFunction=GBM_fit,
+                  trainSampleSets=BSWiMScv$trainSamplesSets)
+save(GBM_fitcv,file="GBM_fitcv.RDATA")
+
+#load("./GBM_fitcv.RDATA")
+bs <- predictionStats_binary(GBM_fitcv$medianTest,"GBM_fitcv")
+bs$accc
+bs$berror
+
+GBM_fit_LAS_cv <- randomCV(fittingFunction=GBM_fit,
+                  trainSampleSets=BSWiMScv$trainSamplesSets,
+                  featureSelectionFunction = BSWiMScv$selectedFeaturesSet)
+
+save(GBM_fit_LAS_cv,file="GBM_fit_LAS_cv.RDATA")
+#load("./GBM_fit_LAS_cv.RDATA")
+
+bs <- predictionStats_binary(GBM_fit_LAS_cv$medianTest,"GBM_fit_LAS_cv")
+bs$accc
+bs$berror
+
+caregbmcv <- randomCV(fittingFunction=train,
+                  trainSampleSets=BSWiMScv$trainSamplesSets,
+                  asFactor = TRUE,
+                  method = "gbm",
+                  trControl = noTuningControl,
+                  tuneGrid = data.frame(interaction.depth = 3,
+                                       n.trees = 75,
+                                       shrinkage = .1,
+                                       n.minobsinnode = 10),
+                  verbose = FALSE
+                  )
+save(caregbmcv,file="caregbmcv.RDATA")
+load("./caregbmcv.RDATA")
+
+bs <- predictionStats_binary(caregbmcv$medianTest,"caregbmcv")
+bs$accc
+bs$berror
+
+
+```
+
+
+```{r}
+
+
+
+HCLAS_BSWiMScv <- randomCV(fittingFunction=HLCM_EM,
+                   trainSampleSets=BSWiMScv$trainSamplesSets,
+                   hysteresis = 0.10)
+
+save(HCLAS_BSWiMScv,file="HCLAS_BSWiMScv.RDATA")
+
+library(FRESA.CAD)
+var <- HLCM_EM( status ~.,baselineImputedNoCorrelated )
+var$classModel
+
+
+table(var$classSet)
+summary(var$classModel)
+
+bs <- predictionStats_binary(HCLAS_BSWiMScv$medianTest,"HCLAS_BSWiMScv")
+
+
+
+```
+
