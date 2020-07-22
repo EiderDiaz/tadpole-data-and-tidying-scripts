@@ -12,21 +12,20 @@ output: html_document
 DatosANDI <- read.delim("./TADPOLE_D1_D2.csv",na.strings=c("NA","","#N/A","#DIV/0!"),sep = ",")
 #ordenar por RID
 DatosANDI <- DatosANDI[with(DatosANDI,order(RID,EXAMDATE)),]
+#numero de pacientes (no observaciones)
 length(unique(DatosANDI$RID))
 
-prueba <- DatosANDI
-prueba <- prueba[with(prueba, order(RID, EXAMDATE)), ]
 
 
 ```
 
 
 ```{r}
-baseline <- subset(prueba,VISCODE=="bl" & DX=="MCI")
+baseline <- subset(DatosANDI,VISCODE=="bl" & DX=="MCI")
 #control
-cn <- subset(prueba,VISCODE=="bl" & DX_bl=="CN")
+cn <- subset(DatosANDI,VISCODE=="bl" & DX_bl=="CN")
 
-conEvento <- subset(prueba,DXCHANGE==5)
+conEvento <- subset(DatosANDI,DXCHANGE==5)
 
 
 ```
@@ -37,7 +36,6 @@ conEvento <- subset(prueba,DXCHANGE==5)
 conEvento<-conEvento[!duplicated(conEvento$RID),]
 
 baselineDeEvento <- baseline[which(baseline$RID %in% conEvento$RID),]
-
 
 baseline$status <- 0
 
